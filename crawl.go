@@ -130,12 +130,16 @@ func main() {
 		}
 	}
 	lres := make(addc, 500)
-	iter := 100
 	start := 0
 	end := len(collection)
-	for i := 0; i < iter; i++ {
-		fmt.Printf("%v. iteration (%v links)\n", i+1, end)
+	count := 1
+	for {
+		fmt.Printf("%v. iteration (%v links)\n", count+1, end)
+		count++
 		new := end - start
+		if new == 0 {
+			break
+		}
 		for k := range collection {
 			if start < end {
 				fmt.Println(start, end)
