@@ -1,2 +1,2 @@
 main:
-	go build crawl.go -o crawl.o
+	go build -o crawl.o crawl.go
