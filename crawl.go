@@ -7,6 +7,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 )
 
 const (
@@ -160,6 +161,7 @@ func main() {
 		}
 		end = len(collection)
 	}
-	close(lres)
+	time.Sleep(1 * time.Second)
+	//close(lres)
 	fmt.Println(collection)
 }
