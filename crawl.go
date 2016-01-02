@@ -15,7 +15,39 @@ const (
 	teststr = "http://tibyte.net/index.html https://google.de/tschuee http://google.de/hallo"
 )
 
+type crawlerError string
+type webspace map[string]int
+type addc chan string
+
+func (w webspace) String() string {
+	ans := ""
+	for k, v := range w {
+		ans = fmt.Sprintf("%v%v", ans, fmt.Sprintf("(%vx) %s\n", v, k))
+	}
+	return ans
+}
+
+func (e crawlerError) Error() string {
+	return fmt.Sprintf("Crawl error: %s", string(e))
+}
+
+func cutdomain(s string) string {
+	for strings.HasSuffix(s, "/") {
+		s = s[:len(s)-1]
+	}
+	return s
+}
+
 func getDomain(dom string, rabs *regexp.Regexp, rrel *regexp.Regexp) ([]string, error) {
+	if strings.HasPrefix(dom, "https://") {
+		dom = dom[8:]
+	}
+	if strings.HasPrefix(dom, "http://") {
+		dom = dom[7:]
+	}
+	for strings.HasSuffix(dom, "/") {
+		dom = dom[:len(dom)-1]
+	}
 	var protocol string
 	ans, err := http.Get(fmt.Sprintf("http://%v", dom))
 	protocol = "http://"
@@ -24,14 +56,17 @@ func getDomain(dom string, rabs *regexp.Regexp, rrel *regexp.Regexp) ([]string, 
 		protocol = "https://"
 		if err != nil {
 			fmt.Printf("Domain [%v] doesn't exist\n", dom)
-			//panic(err)
-			return nil, nil //TODO: return error
+			fmt.Println(err)
+			return nil, crawlerError("http and https not supported")
 		}
 	}
 	defer ans.Body.Close()
 	text, _ := ioutil.ReadAll(ans.Body)
 	longabs := rabs.FindAllString(string(text), -1)
 	longrel := rrel.FindAllString(string(text), -1)
+	if i := strings.Index(dom, "/"); i != -1 {
+		dom = dom[:i]
+	}
 	for k, v := range longrel {
 		longrel[k] = v[7 : len(v)-1]
 		if longrel[k][0] == '/' {
@@ -44,14 +79,26 @@ func getDomain(dom string, rabs *regexp.Regexp, rrel *regexp.Regexp) ([]string, 
 	res := make([]string, len(longabs)+len(longrel))
 	count := 0
 	for _, v := range longabs {
-		res[count] = v
+		res[count] = cutdomain(v)
 		count++
 	}
 	for _, v := range longrel {
-		res[count] = v
+		res[count] = cutdomain(v)
 		count++
 	}
 	return res, nil
+}
+
+func fill(addr string, c *addc, r1, r2 *regexp.Regexp) {
+	links, err := getDomain(addr, r1, r2)
+	if err != nil {
+		fmt.Printf("Could not read %v\n", addr)
+		*c <- "none"
+		return
+	}
+	for _, l := range links {
+		*c <- l
+	}
 }
 
 func main() {
@@ -71,7 +118,48 @@ func main() {
 	rrel, _ := regexp.Compile(relraw)
 	//fmt.Printf("Crawling %v with:\n%v\n%v\n", url, reg, relraw)
 	links, _ := getDomain(url, r, rrel)
-	for _, l := range links {
-		fmt.Println(l)
+	maxsize := 100
+	collection := make(webspace, maxsize)
+	for _, v := range links {
+		n, ok := collection[v]
+		if ok {
+			collection[v] = n + 1
+		} else {
+			collection[v] = 1
+		}
 	}
+	lres := make(addc, 500)
+	iter := 100
+	start := 0
+	end := len(collection)
+	for i := 0; i < iter; i++ {
+		fmt.Printf("%v. iteration (%v links)\n", i+1, end)
+		new := end - start
+		for k := range collection {
+			if start < end {
+				fmt.Println(start, end)
+				go fill(k, &lres, r, rrel)
+				start++
+			} else {
+				continue
+			}
+		}
+		for index := 0; index < new; index++ {
+			ns := <-lres
+			fmt.Println(ns)
+			if ns == "none" {
+				continue
+			}
+			n, ok := collection[ns]
+			if ok {
+				collection[ns] = n + 1
+			} else {
+				collection[ns] = 1
+				fmt.Println(ns)
+			}
+		}
+		end = len(collection)
+	}
+	close(lres)
+	fmt.Println(collection)
 }
